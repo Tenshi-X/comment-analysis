@@ -397,14 +397,36 @@ def bertopic_page():
             st.error(data['error'])
         else:
             col1, col2, col3 = st.columns(3)
-            with col1: st.metric("Total Topics", data.get('total_topics', 0))
-            with col2: st.metric("Coherence Score", f"{data.get('coherence_score', 0):.3f}")
-            with col3: st.metric("Model Type", "BERTopic")
+            with col1: st.metric("Total Topik", data.get('total_topics', 0))
+            with col2: st.metric("Skor Koherensi", f"{data.get('coherence_score', 0):.3f}")
+            with col3: st.metric("Tipe Model", "BERTopic")
 
             if 'topics_summary' in data:
                 st.subheader("🔍 Topik Teratas")
                 top_topics = sorted(data['topics_summary'], key=lambda x: x['count'], reverse=True)[:10]
-                st.dataframe(pd.DataFrame(top_topics), hide_index=True, use_container_width=True)
+                
+                # Prepare data for display
+                display_data = []
+                for t in top_topics:
+                    display_data.append({
+                        'topic_id': t['topic_id'],
+                        'name': t['name'],
+                        'keywords': t['keywords'],
+                        'count': t['count']
+                    })
+
+                st.dataframe(
+                    pd.DataFrame(display_data),
+                    column_config={
+                        "topic_id": st.column_config.NumberColumn("ID Topik", width="small"),
+                        "name": st.column_config.TextColumn("Label Topik", width="medium"),
+                        "keywords": st.column_config.ListColumn("Kata Kunci (Top Words)", width="large"),
+                        "count": st.column_config.NumberColumn("Estimasi Jumlah", width="small"),
+                    },
+                    column_order=["topic_id", "name", "keywords", "count"],
+                    hide_index=True,
+                    use_container_width=True
+                )
 
             if 'visualizations' in data:
                 st.subheader("📈 Visualisasi")
@@ -413,10 +435,7 @@ def bertopic_page():
                     st.components.v1.html(data['visualizations']['barchart'], height=400, scrolling=True)
                 if data['visualizations'].get('topics'):
                     st.markdown("**Visualisasi Topik 2D**")
-                    st.components.v1.html(data['visualizations']['topics'], height=400)
-                if data['visualizations'].get('hierarchy'):
-                    st.markdown("**Visualisasi Hierarki Topik**")
-                    st.components.v1.html(data['visualizations']['hierarchy'], height=400)
+                    st.components.v1.html(data['visualizations']['topics'], height=800)
 
     except Exception as e:
         st.error(f'Error dalam analisis BERTopic: {str(e)}')
@@ -448,12 +467,12 @@ def lda_page():
             st.error(data['error'])
         else:
             col1, col2, col3 = st.columns(3)
-            with col1: st.metric("Total Topics", data.get('total_topics', 0))
-            with col2: st.metric("Coherence Score", f"{data.get('coherence_score', 0):.3f}")
-            with col3: st.metric("Model Type", "LDA")
+            with col1: st.metric("Total Topik", data.get('total_topics', 0))
+            with col2: st.metric("Skor Koherensi", f"{data.get('coherence_score', 0):.3f}")
+            with col3: st.metric("Tipe Model", "LDA")
 
             if 'topics_summary' in data:
-                st.subheader("🔍 Topik Teratas (LDA)")
+                st.subheader("🔍 Topik Teratas")
                 top_topics = sorted(data['topics_summary'], key=lambda x: x['count'], reverse=True)
                 
                 # Filter columns to display and avoid numpy types issues
@@ -469,11 +488,12 @@ def lda_page():
                 st.dataframe(
                     pd.DataFrame(display_data), 
                     column_config={
-                        "topic_id": st.column_config.NumberColumn("ID Topik"),
-                        "keywords": st.column_config.ListColumn("Kata Kunci (Top Words)"),
-                        "count": st.column_config.NumberColumn("Estimasi Jumlah"),
-                        "name": st.column_config.TextColumn("Label Topik")
+                        "topic_id": st.column_config.NumberColumn("ID Topik", width="small"),
+                        "name": st.column_config.TextColumn("Label Topik", width="medium"),
+                        "keywords": st.column_config.ListColumn("Kata Kunci (Top Words)", width="large"),
+                        "count": st.column_config.NumberColumn("Estimasi Jumlah", width="small"),
                     },
+                    column_order=["topic_id", "name", "keywords", "count"],
                     hide_index=True, 
                     use_container_width=True
                 )
@@ -481,7 +501,12 @@ def lda_page():
             if 'visualizations' in data:
                 st.subheader("📈 Visualisasi (Barchart)")
                 if data['visualizations'].get('barchart'):
+                    st.markdown("**Barchart - Kata-Kata Utama per Topik**")
                     st.components.v1.html(data['visualizations']['barchart'], height=800, scrolling=True)
+                
+                if data['visualizations'].get('intertopic_map'):
+                    st.markdown("**Visualisasi Intertopic Distance Map**")
+                    st.components.v1.html(data['visualizations']['intertopic_map'], height=800, scrolling=True)
 
     except Exception as e:
         st.error(f'Error dalam analisis LDA: {str(e)}')

@@ -148,56 +148,131 @@ def get_lda_analysis(filepath=None):
     }
 
 def generate_lda_visualizations(topics_summary):
-    # Visualize Barchart: Top words per topic
-    barchart_htmls = {}
-    
-    # Combined barchart (just top words for all topics nicely?)
-    # Or separate charts? BERTopic does separate bars in one big chart usually or subplot.
-    # Let's do what user asked: Barchart.
-    # We can create a dropdown-like behavior or just show top 5 topics' top words.
-    
-    # Let's make a horizontal bar chart for each topic or a Facet plot
-    # Simpler: Bar chart of Top 10 words for the Topic with highest count?
-    # Or just Stacked?
-    # Let's try to mimic BERTopic's barchart: Horizontal bars for each topic.
-    
-    # Since we can't easily return multiple widgets, let's create one big figure with subplots
-    # OR just one figure for the most prominent topic?
-    # Actually, let's just make one combined chart for the top topic for now, 
-    # or better, return a list of figures if the UI can handle it.
-    # But current pattern returns HTML strings.
-    
-    # Let's create a single chart that allows selecting topics or just shows top words for Topic 1
-    # Actually, standard BERTopic "visualize_barchart" shows a grid of bar charts.
-    # We can replicate "Top 5 Topics" bar charts using Plotly Subplots.
+    visualizations = {}
     
     try:
         from plotly.subplots import make_subplots
+        import plotly.graph_objects as go
+        import plotly.express as px
+        import plotly.colors
         
-        # Take top 5 topics by count
-        top_topics = sorted(topics_summary, key=lambda x: x['count'], reverse=True)[:8] # Max 8
+        # 1. Barchart: Top words per topic (Colorful)
+        
+        # Take top 8 topics by count
+        top_topics = sorted(topics_summary, key=lambda x: x['count'], reverse=True)[:8]
         rows = (len(top_topics) + 1) // 2
         cols = 2
         
-        fig = make_subplots(rows=rows, cols=cols, subplot_titles=[t['name'] for t in top_topics])
+        fig = make_subplots(
+            rows=rows, 
+            cols=cols, 
+            subplot_titles=[t['name'] for t in top_topics],
+            vertical_spacing=0.15,
+            horizontal_spacing=0.1
+        )
+        
+        # Colors
+        colors = plotly.colors.qualitative.Plotly + plotly.colors.qualitative.Bold
         
         for idx, topic in enumerate(top_topics):
-            words = [w[0] for w in topic['top_words_probs']][:5][::-1] # Top 5 words, reversed for horiz bar
+            words = [w[0] for w in topic['top_words_probs']][:5][::-1] 
             probs = [w[1] for w in topic['top_words_probs']][:5][::-1]
             
             row = (idx // 2) + 1
             col = (idx % 2) + 1
             
+            # Use specific color
+            color = colors[idx % len(colors)]
+            
             fig.add_trace(
-                go.Bar(y=words, x=probs, orientation='h', name=topic['name']),
+                go.Bar(
+                    y=words, 
+                    x=probs, 
+                    orientation='h', 
+                    name=topic['name'],
+                    marker_color=color,
+                    showlegend=False
+                ),
                 row=row, col=col
             )
             
-        fig.update_layout(height=300 * rows, title_text="Top Words per Topic", showlegend=False)
-        barchart_html = fig.to_html(full_html=False)
-    except Exception as e:
-        barchart_html = f"<p>Gagal membuat visualisasi: {str(e)}</p>"
+        fig.update_layout(height=350 * rows, title_text="Top Words per Topic", showlegend=False)
+        visualizations['barchart'] = fig.to_html(full_html=False)
+        
+        # 2. Intertopic Distance Map (Simulated like BERTopic using MDS)
+        try:
+            from sklearn.manifold import MDS
+            from sklearn.metrics.pairwise import cosine_distances
+            import numpy as np
 
-    return {
-        'barchart': barchart_html
-    }
+            # Create vectors based on the union of all top words.
+            all_top_words = set()
+            for t in topics_summary:
+                for w, _ in t['top_words_probs']:
+                    all_top_words.add(w)
+            
+            vocab = list(all_top_words)
+            vocab_idx = {w: i for i, w in enumerate(vocab)}
+            
+            # Create vectors
+            vectors = []
+            sizes = []
+            labels = []
+            
+            for t in topics_summary:
+                vec = np.zeros(len(vocab))
+                for w, p in t['top_words_probs']:
+                    if w in vocab_idx:
+                        vec[vocab_idx[w]] = p
+                vectors.append(vec)
+                sizes.append(t['count'])
+                labels.append(t['name'])
+            
+            vectors = np.array(vectors)
+            
+            if len(vectors) > 2:
+                # Compute distance matrix
+                dist_matrix = cosine_distances(vectors)
+                
+                # MDS
+                mds = MDS(n_components=2, dissimilarity='precomputed', random_state=42)
+                coords = mds.fit_transform(dist_matrix)
+                
+                # Plot
+                df_map = pd.DataFrame({
+                    'x': coords[:, 0],
+                    'y': coords[:, 1],
+                    'Topic': labels,
+                    'Size': sizes,
+                    'Keywords': [", ".join(t['keywords'][:5]) for t in topics_summary]
+                })
+                
+                fig_map = px.scatter(
+                    df_map, 
+                    x='x', 
+                    y='y', 
+                    size='Size', 
+                    color='Topic',
+                    hover_name='Topic',
+                    hover_data={'Keywords': True, 'x': False, 'y': False},
+                    title='Intertopic Distance Map (LDA)',
+                    size_max=60
+                )
+                
+                fig_map.update_layout(
+                    showlegend=False, 
+                    height=800,
+                    xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+                    yaxis=dict(showgrid=False, zeroline=False, showticklabels=False)
+                )
+                visualizations['intertopic_map'] = fig_map.to_html(full_html=False)
+            else:
+                visualizations['intertopic_map'] = "<p>Not enough topics for Intertopic Map</p>"
+                
+        except Exception as e:
+             visualizations['intertopic_map'] = f"<p>Gagal membuat map: {str(e)}</p>"
+
+    except Exception as e:
+        visualizations['barchart'] = f"<p>Gagal membuat visualisasi: {str(e)}</p>"
+
+    return visualizations

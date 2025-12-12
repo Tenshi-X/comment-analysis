@@ -186,41 +186,15 @@ def build_bertopic_model(filepath=None):
         }
         joblib.dump(model_data, model_path)
 
-        # Create visualizations using BERTopic's built-in methods
-        try:
-            # Barchart visualization (word frequencies per topic) - show only 5 top topics
-            fig_barchart = topic_model.visualize_barchart(top_n_topics=5, height=400)
-            barchart_html = fig_barchart.to_html(full_html=False) if fig_barchart else "<p>Visualisasi barchart tidak tersedia</p>"
-
-            # Topics visualization (2D scatter plot) - show ALL topics
-            fig_topics = topic_model.visualize_topics(height=400)
-            topics_html = fig_topics.to_html(full_html=False) if fig_topics else "<p>Visualisasi topik 2D tidak tersedia</p>"
-
-            # Hierarchy visualization - show ALL topics
-            fig_hierarchy = topic_model.visualize_hierarchy(height=400)
-            hierarchy_html = fig_hierarchy.to_html(full_html=False) if fig_hierarchy else "<p>Visualisasi hierarchy tidak tersedia</p>"
-
-            # Distribution chart (same as barchart for compatibility)
-            distribution_html = barchart_html
-
-        except Exception as viz_error:
-            # Fallback visualizations if BERTopic viz fails
-            barchart_html = "<p>Visualisasi barchart gagal dimuat</p>"
-            topics_html = "<p>Visualisasi topik 2D gagal dimuat</p>"
-            hierarchy_html = "<p>Visualisasi hierarchy gagal dimuat</p>"
-            distribution_html = "<p>Visualisasi distribusi gagal dimuat</p>"
+        # Generate Visualizations
+        visualizations = generate_bertopic_visualizations(topic_model)
 
         return {
             'topics_summary': topics_summary,
             'coherence_score': coherence_score,
             'total_topics': len(topics_summary),
             'model_type': 'BERTopic (Real Implementation)',
-            'visualizations': {
-                'barchart': distribution_html,
-                'hierarchy': hierarchy_html,
-                'topics': topics_html,
-                'distribution': distribution_html  # Same as barchart for compatibility
-            }
+            'visualizations': visualizations
         }
 
     except Exception as e:
@@ -239,51 +213,87 @@ def get_bertopic_analysis(filepath=None):
     topic_model = model_data['topic_model']
     topics_summary = model_data['topics_summary']
 
-    # Create visualizations using BERTopic's built-in methods
-    try:
-        # Barchart visualization (word frequencies per topic) - show only 5 top topics
-        fig_barchart = topic_model.visualize_barchart(top_n_topics=5, height=400)
-        barchart_html = fig_barchart.to_html(full_html=False) if fig_barchart else "<p>Visualisasi barchart tidak tersedia</p>"
-
-        # Create simple distribution chart using plotly (topic counts) - show only 5 top topics
-        topic_ids = [f'Topik {topic["topic_id"]}' for topic in topics_summary[:5]]  # Top 5 topics
-        counts = [topic['count'] for topic in topics_summary[:5]]
-
-        fig_dist = px.bar(
-            x=topic_ids,
-            y=counts,
-            title='Distribusi Topik (BERTopic)',
-            labels={'x': 'Topik', 'y': 'Jumlah Komentar'},
-            color=counts,
-            color_continuous_scale='Blues'
-        )
-        fig_dist.update_layout(height=400)
-        distribution_html = fig_dist.to_html(full_html=False)
-
-        # Topics visualization (2D scatter plot) - show ALL topics
-        fig_topics = topic_model.visualize_topics(height=400)
-        topics_html = fig_topics.to_html(full_html=False) if fig_topics else "<p>Visualisasi topik 2D tidak tersedia</p>"
-
-        # Hierarchy visualization - show ALL topics
-        fig_hierarchy = topic_model.visualize_hierarchy(height=400)
-        hierarchy_html = fig_hierarchy.to_html(full_html=False) if fig_hierarchy else "<p>Visualisasi hierarchy tidak tersedia</p>"
-
-    except Exception as viz_error:
-        # Fallback visualizations if BERTopic viz fails
-        barchart_html = "<p>Visualisasi barchart gagal dimuat</p>"
-        distribution_html = "<p>Visualisasi distribusi gagal dimuat</p>"
-        topics_html = "<p>Visualisasi topik 2D gagal dimuat</p>"
-        hierarchy_html = "<p>Visualisasi hierarchy gagal dimuat</p>"
+    # Generate Visualizations
+    visualizations = generate_bertopic_visualizations(topic_model)
 
     return {
         'topics_summary': topics_summary,
         'coherence_score': model_data.get('coherence_score', 0.0),
         'total_topics': model_data.get('total_topics', 0),
         'model_type': 'BERTopic (Real Implementation)',
-        'visualizations': {
-            'barchart': barchart_html,
-            'hierarchy': hierarchy_html,
-            'topics': topics_html,
-            'distribution': distribution_html
-        }
+        'visualizations': visualizations
     }
+
+def generate_bertopic_visualizations(topic_model):
+    """Generate visualizations for BERTopic model"""
+    from plotly.subplots import make_subplots
+    import plotly.graph_objects as go
+    import plotly.express as px
+
+    visualizations = {}
+
+    try:
+        # 1. Custom Barchart (Matching LDA style but colorful)
+        # Get top topics
+        topic_info = topic_model.get_topic_info()
+        topic_info = topic_info[topic_info['Topic'] != -1]
+        top_topics = topic_info.sort_values('Count', ascending=False).head(8)
+        
+        # Colors for bars
+        colors = px.colors.qualitative.Plotly + px.colors.qualitative.Bold
+        
+        rows = (len(top_topics) + 1) // 2
+        cols = 2
+        
+        fig_barchart = make_subplots(
+            rows=rows, 
+            cols=cols, 
+            subplot_titles=[f"Topic {row['Topic']}: {row['Name'].split('_', 1)[1] if '_' in row['Name'] else row['Name']}" for _, row in top_topics.iterrows()],
+            vertical_spacing=0.15,
+            horizontal_spacing=0.1
+        )
+
+        for idx, (_, row) in enumerate(top_topics.iterrows()):
+            topic_id = row['Topic']
+            words_data = topic_model.get_topic(topic_id)
+            if not words_data:
+                continue
+                
+            words = [w[0] for w in words_data][:5][::-1]
+            scores = [w[1] for w in words_data][:5][::-1]
+            
+            row_idx = (idx // 2) + 1
+            col_idx = (idx % 2) + 1
+            
+            # Use specific color for each topic
+            color = colors[idx % len(colors)]
+            
+            fig_barchart.add_trace(
+                go.Bar(
+                    y=words, 
+                    x=scores, 
+                    orientation='h', 
+                    name=f"Topic {topic_id}",
+                    marker_color=color,
+                    showlegend=False
+                ),
+                row=row_idx, 
+                col=col_idx
+            )
+            
+        fig_barchart.update_layout(
+            height=350 * rows, 
+            title_text="Top Words per Topic (Score)",
+            showlegend=False
+        )
+        visualizations['barchart'] = fig_barchart.to_html(full_html=False)
+
+        # 2. Topics visualization (2D scatter plot)
+        fig_topics = topic_model.visualize_topics(height=800)
+        visualizations['topics'] = fig_topics.to_html(full_html=False) if fig_topics else "<p>Visualisasi topik 2D tidak tersedia</p>"
+
+    except Exception as viz_error:
+        visualizations['barchart'] = f"<p>Visualisasi gagal dimuat: {str(viz_error)}</p>"
+        visualizations['topics'] = "<p>Visualisasi topik 2D gagal dimuat</p>"
+
+    return visualizations
