@@ -1,0 +1,21 @@
+{% extends 'base.html' %}
+{% block content %}
+<h3>Komentar Asli TikTok</h3>
+<p><strong>Jumlah komentar:</strong> {{ total_comments }}</p>
+{% if comments %}
+    <div style="max-height: 500px; overflow-y: auto; border: 1px solid #eee; border-radius: 8px; padding: 16px; background: #fafcff;">
+        <ul style="padding-left: 18px;">
+            {% for comment in comments %}
+                <li style="margin-bottom: 10px; border-bottom: 1px solid #f0f0f0; padding-bottom: 6px;">
+                    <span style="font-weight:500;">{{ comment.text }}</span>
+                    <br>
+                    <span style="color:#888; font-size:13px;">{{ comment.date }}</span>
+                </li>
+            {% endfor %}
+        </ul>
+    </div>
+{% else %}
+    <p>Tidak ada komentar ditemukan di file CSV.</p>
+{% endif %}
+<a href="{{ url_for('home') }}" class="btn btn-secondary" style="margin-top: 20px;">Kembali ke Dashboard</a>
+{% endblock %}

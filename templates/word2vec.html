@@ -1,0 +1,163 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="word2vec-container">
+    <h3>Analisis Model Word2Vec</h3>
+
+    {% if data.error %}
+    <div class="alert alert-danger">
+        <h5>Error:</h5>
+        <p>{{ data.error }}</p>
+    </div>
+    {% else %}
+    <!-- Deskripsi -->
+    <div class="card mb-4">
+        <div class="card-header">
+            <h5>Deskripsi Model</h5>
+        </div>
+        <div class="card-body">
+            <p class="text-muted">
+                Model Word2Vec digunakan untuk merepresentasikan kata ke dalam vektor berdimensi {{ data.model_info.vector_size }}
+                yang menggambarkan hubungan semantik antar kata.
+            </p>
+        </div>
+    </div>
+
+    <!-- Informasi Model -->
+    <div class="card mb-4">
+        <div class="card-header">
+            <h5>Informasi Model</h5>
+        </div>
+        <div class="card-body">
+            <div class="row">
+                <div class="col-md-6">
+                    <ul class="list-group">
+                        <li class="list-group-item">
+                            <strong>Jumlah Kata Unik (Vocabulary):</strong> {{ data.model_info.vocab_size }}
+                        </li>
+                        <li class="list-group-item">
+                            <strong>Dimensi Vektor:</strong> {{ data.model_info.vector_size }}
+                        </li>
+                    </ul>
+                </div>
+                <div class="col-md-6">
+                    <ul class="list-group">
+                        <li class="list-group-item">
+                            <strong>Ukuran Window:</strong> {{ data.model_info.window_size }}
+                        </li>
+                        <li class="list-group-item">
+                            <strong>Minimum Count:</strong> {{ data.model_info.min_count }}
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Contoh Embedding -->
+    <div class="card mb-4">
+        <div class="card-header">
+            <h5>Contoh Hasil Embedding</h5>
+        </div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-striped">
+                    <thead>
+                        <tr>
+                            <th>Kata</th>
+                            <th>Dimensi 1</th>
+                            <th>Dimensi 2</th>
+                            <th>Dimensi 3</th>
+                            <th>Dimensi 4</th>
+                            <th>Dimensi 5</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for embedding in data.sample_embeddings %}
+                        <tr>
+                            <td><strong>{{ embedding.word }}</strong></td>
+                            {% for dim in embedding.vector %}
+                            <td>{{ "%.4f"|format(dim) }}</td>
+                            {% endfor %}
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Visualisasi -->
+    {% if data.visualization %}
+    <div class="card mb-4">
+        <div class="card-header">
+            <h5>Visualisasi Kata dalam Ruang 2D (PCA)</h5>
+        </div>
+        <div class="card-body">
+            {{ data.visualization|safe }}
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Kata Serupa -->
+    <div class="card mb-4">
+        <div class="card-header">
+            <h5>Kata yang Mirip Semantik</h5>
+        </div>
+        <div class="card-body">
+            {% for word, similars in data.similar_words.items() %}
+            {% if similars %}
+            <div class="mb-3">
+                <h6>Kata: "<strong>{{ word }}</strong>"</h6>
+                <ul class="list-group">
+                    {% for similar in similars %}
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        {{ similar.word }}
+                        <span class="badge badge-primary badge-pill">{{ "%.4f"|format(similar.similarity) }}</span>
+                    </li>
+                    {% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+            {% endfor %}
+        </div>
+    </div>
+
+    <!-- Tombol Lanjut -->
+    <div class="text-center">
+        <a href="{{ url_for('bertopic_build') }}" class="btn btn-primary btn-lg">
+            Lanjut ke Build BERTopic
+        </a>
+    </div>
+    {% endif %}
+</div>
+
+<style>
+.word2vec-container {
+    padding: 20px;
+}
+.card {
+    margin-bottom: 20px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    border-radius: 10px;
+}
+.card-header {
+    background: linear-gradient(135deg, #667eea, #764ba2);
+    color: white;
+    border-radius: 10px 10px 0 0;
+}
+.table-responsive {
+    max-height: 400px;
+    overflow-y: auto;
+}
+.list-group-item {
+    border: none;
+    border-bottom: 1px solid #dee2e6;
+}
+.list-group-item:last-child {
+    border-bottom: none;
+}
+.badge-primary {
+    background-color: #007bff;
+}
+</style>
+{% endblock %}

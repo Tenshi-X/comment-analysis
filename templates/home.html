@@ -1,0 +1,214 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="welcome-container">
+    <div class="welcome-header">
+        <i class="fas fa-chart-network welcome-icon"></i>
+        <h2>Analisis Topik Komentar TikTok</h2>
+        <p class="subtitle">Temukan insight menarik dari data komentar TikTok Anda</p>
+    </div>
+
+    {% if uploaded %}
+        <div class="current-file">
+            <div class="file-info">
+                <i class="fas fa-file-csv"></i>
+                <span>File aktif: {{ session.get('uploaded_file').split('\\')[-1] }}</span>
+            </div>
+            <div class="upload-new">
+                <button class="btn-change" onclick="document.getElementById('newFileUpload').click()">
+                    <i class="fas fa-sync-alt"></i> Ganti File CSV
+                </button>
+                <form id="uploadForm" method="POST" enctype="multipart/form-data" style="display: none;">
+                    <input type="file" id="newFileUpload" name="file" accept=".csv" 
+                           onchange="document.getElementById('uploadForm').submit()">
+                </form>
+            </div>
+        </div>
+
+        <div class="features-grid">
+            <div class="feature-card">
+                <i class="fas fa-comments"></i>
+                <h3>Komentar</h3>
+                <p>Lihat semua komentar dari file CSV yang diupload</p>
+                <a href="{{ url_for('comments_raw') }}" class="card-link">Lihat Komentar</a>
+            </div>
+            <div class="feature-card">
+                <i class="fas fa-tasks"></i>
+                <h3>Preprocessing</h3>
+                <p>Lihat hasil preprocessing dan pembersihan data</p>
+                <a href="{{ url_for('comments_preprocessed') }}" class="card-link">Mulai Preprocessing</a>
+            </div>
+            <div class="feature-card">
+                <i class="fas fa-vector-square"></i>
+                <h3>Word2Vec</h3>
+                <p>Visualisasi embedding kata menggunakan Word2Vec</p>
+                <a href="{{ url_for('word2vec') }}" class="card-link">Lihat Word2Vec</a>
+            </div>
+            <div class="feature-card">
+                <i class="fas fa-project-diagram"></i>
+                <h3>BERTopic</h3>
+                <p>Pembentukan dan analisis topik dengan BERTopic</p>
+                <a href="{{ url_for('bertopic_build') }}" class="card-link">Build Model</a>
+            </div>
+        </div>
+    {% else %}
+        <div class="upload-section">
+            <div class="upload-prompt">
+                <i class="fas fa-cloud-upload-alt"></i>
+                <h3>Upload File CSV</h3>
+                <p>Upload file CSV Anda untuk memulai analisis</p>
+            </div>
+            <form method="POST" enctype="multipart/form-data" class="upload-form">
+                <div class="file-input-wrapper">
+                    <input type="file" name="file" accept=".csv" required>
+                    <p class="file-help">Format yang didukung: CSV</p>
+                </div>
+                <button type="submit" class="btn-upload">
+                    <i class="fas fa-upload"></i> Upload File
+                </button>
+            </form>
+        </div>
+    {% endif %}
+</div>
+
+<style>
+    .welcome-container {
+        padding: 2rem;
+        background: linear-gradient(135deg, #E0EAFC, #CFDEF3, #FBE7F3);
+        border-radius: 15px;
+        box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+    }
+
+    .welcome-header {
+        text-align: center;
+        margin-bottom: 3rem;
+        color: #2c3e50;
+    }
+
+    .welcome-icon {
+        font-size: 4rem;
+        color: #5d8ac9;
+        margin-bottom: 1rem;
+    }
+
+    .current-file {
+        background: rgba(255, 255, 255, 0.9);
+        padding: 1rem 2rem;
+        border-radius: 10px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 2rem;
+    }
+
+    .file-info {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        color: #2c3e50;
+    }
+
+    .file-info i {
+        color: #5d8ac9;
+        font-size: 1.2rem;
+    }
+
+    .btn-change {
+        background: linear-gradient(135deg, #5d8ac9, #8b9fd3);
+        color: white;
+        border: none;
+        padding: 0.5rem 1rem;
+        border-radius: 5px;
+        cursor: pointer;
+        transition: all 0.3s ease;
+    }
+
+    .btn-change:hover {
+        background: linear-gradient(135deg, #4a7ab9, #7a8ec3);
+        transform: translateY(-2px);
+    }
+
+    .features-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+        gap: 2rem;
+        margin-top: 2rem;
+    }
+
+    .feature-card {
+        background: rgba(255, 255, 255, 0.9);
+        padding: 2rem;
+        border-radius: 12px;
+        text-align: center;
+        transition: transform 0.3s ease;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+    }
+
+    .feature-card:hover {
+        transform: translateY(-5px);
+    }
+
+    .feature-card i {
+        font-size: 2.5rem;
+        color: #5d8ac9;
+        margin-bottom: 1rem;
+    }
+
+    .card-link {
+        display: inline-block;
+        margin-top: 1rem;
+        padding: 0.5rem 1rem;
+        background: linear-gradient(135deg, #5d8ac9, #8b9fd3);
+        color: white;
+        text-decoration: none;
+        border-radius: 5px;
+        transition: all 0.3s ease;
+    }
+
+    .card-link:hover {
+        background: linear-gradient(135deg, #4a7ab9, #7a8ec3);
+        transform: translateY(-2px);
+        color: white;
+    }
+
+    .upload-section {
+        background: rgba(255, 255, 255, 0.9);
+        padding: 3rem;
+        border-radius: 12px;
+        text-align: center;
+    }
+
+    .upload-prompt i {
+        font-size: 3rem;
+        color: #5d8ac9;
+        margin-bottom: 1rem;
+    }
+
+    .file-input-wrapper {
+        border: 2px dashed #5d8ac9;
+        padding: 2rem;
+        border-radius: 8px;
+        margin: 1rem 0;
+        transition: all 0.3s ease;
+    }
+
+    .file-input-wrapper:hover {
+        border-color: #8b9fd3;
+        background: rgba(251, 231, 243, 0.1);
+    }
+
+    .btn-upload {
+        background: linear-gradient(135deg, #5d8ac9, #8b9fd3);
+        color: white;
+        border: none;
+        padding: 0.8rem 2rem;
+        border-radius: 8px;
+        cursor: pointer;
+        transition: all 0.3s ease;
+    }
+
+    .btn-upload:hover {
+        background: linear-gradient(135deg, #4a7ab9, #7a8ec3);
+        transform: translateY(-2px);
+    }
+</style>
+{% endblock %}

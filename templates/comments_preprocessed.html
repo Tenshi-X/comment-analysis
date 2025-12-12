@@ -1,0 +1,109 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="preprocessing-container">
+    <div class="alert alert-info" role="alert">
+        <i class="fas fa-info-circle"></i> Proses preprocessing sedang berjalan... Mohon tunggu sebentar.
+    </div>
+    <h3>Hasil Preprocessing Komentar TikTok</h3>
+    
+    <!-- Penjelasan Langkah Preprocessing -->
+    <div class="card mb-4">
+        <div class="card-header">
+            <h5>Langkah-Langkah Preprocessing</h5>
+        </div>
+        <div class="card-body">
+            <ol>
+                <li><strong>Pembersihan Data Awal:</strong> Menghitung jumlah data total, jumlah duplikat, dan data kosong pada setiap kolom.</li>
+                <li><strong>Hapus Duplikat:</strong> Menghapus baris yang memiliki data duplikat untuk menghindari redundansi.</li>
+                <li><strong>Hapus Data Kosong:</strong> Menghapus baris yang memiliki teks kosong pada kolom 'text'.</li>
+                <li><strong>Preprocessing Teks:</strong>
+                    <ul>
+                        <li><strong>Lowercase:</strong> Mengubah semua huruf menjadi huruf kecil.</li>
+                        <li><strong>Hapus Tanda Baca:</strong> Menghapus semua tanda baca seperti titik, koma, dll.</li>
+                        <li><strong>Hapus Karakter Khusus:</strong> Menghapus karakter selain huruf dan angka.</li>
+                        <li><strong>Tokenisasi:</strong> Memisahkan teks menjadi kata-kata individual.</li>
+                        <li><strong>Hapus Stopwords:</strong> Menghapus kata-kata umum dalam bahasa Indonesia yang tidak bermakna (seperti 'dan', 'atau', 'yang').</li>
+                        <li><strong>Stemming:</strong> Mengubah kata-kata ke bentuk dasar menggunakan algoritma Sastrawi.</li>
+                    </ul>
+                </li>
+            </ol>
+        </div>
+    </div>
+
+    <!-- Statistik Data -->
+    <div class="card mb-4">
+        <div class="card-header">
+            <h5>Statistik Data</h5>
+        </div>
+        <div class="card-body">
+            <div class="row">
+                <div class="col-md-4">
+                    <h6>Data Awal:</h6>
+                    <ul>
+                        <li>Jumlah data: {{ results.data_awal.jumlah_data }}</li>
+                        <li>Jumlah duplikat: {{ results.data_awal.jumlah_duplikat }}</li>
+                    </ul>
+                </div>
+                <div class="col-md-4">
+                    <h6>Setelah Hapus Duplikat:</h6>
+                    <ul>
+                        <li>Jumlah data: {{ results.setelah_hapus_duplikat.jumlah_data }}</li>
+                    </ul>
+                </div>
+                <div class="col-md-4">
+                    <h6>Hasil Akhir:</h6>
+                    <ul>
+                        <li>Jumlah data: {{ results.setelah_hapus_kosong.jumlah_data }}</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tabel Hasil Preprocessing -->
+    <div class="card">
+        <div class="card-header">
+            <h5>Detail Hasil Preprocessing</h5>
+        </div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-striped">
+                    <thead>
+                        <tr>
+                            <th>Teks Asli</th>
+                            <th>Hasil Preprocessing</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in results.hasil_preprocessing %}
+                        <tr>
+                            <td>{{ item.text }}</td>
+                            <td>{{ item.text_clean }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.preprocessing-container {
+    padding: 20px;
+}
+.card {
+    margin-bottom: 20px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    border-radius: 10px;
+}
+.card-header {
+    background: linear-gradient(135deg, #E0EAFC, #CFDEF3);
+    border-radius: 10px 10px 0 0;
+}
+.table-responsive {
+    max-height: 500px;
+    overflow-y: auto;
+}
+</style>
+{% endblock %}
