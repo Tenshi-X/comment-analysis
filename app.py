@@ -13,11 +13,9 @@ st.set_page_config(page_title="TikTok Comments Analyzer", page_icon="📊", layo
 if 'uploaded_file' not in st.session_state:
     st.session_state.uploaded_file = None
 
-# Initialize session state for BERTopic and LDA
+# Initialize session state for BERTopic
 if 'bertopic_cache' not in st.session_state:
     st.session_state.bertopic_cache = {}  # Dictionary to cache models per file hash
-if 'lda_cache' not in st.session_state:
-    st.session_state.lda_cache = {} # Dictionary to cache LDA models
 
 def get_file_hash(file_path):
     """Calculate SHA256 hash of file content to identify unique files."""
@@ -35,7 +33,7 @@ def main():
         # Sidebar navigation (without Upload option)
         page = st.sidebar.selectbox(
             "Pilih Menu",
-            ["Home", "Komentar Asli", "Komentar Preprocessing", "Word2Vec", "Analysis"]
+            ["Home", "Komentar Asli", "Komentar Preprocessing", "Analisis"]
         )
 
         if page == "Home":
@@ -44,9 +42,7 @@ def main():
             comments_raw_page()
         elif page == "Komentar Preprocessing":
             comments_preprocessed_page()
-        elif page == "Word2Vec":
-            word2vec_page()
-        elif page == "Analysis":
+        elif page == "Analisis":
             analysis_page()
     else:
         # No file uploaded, show only upload page without sidebar
@@ -84,7 +80,6 @@ def home_page():
             st.info("Model analisis akan dimuat ulang untuk file baru.")
             # Clear caches
             st.session_state.bertopic_cache = {}
-            st.session_state.lda_cache = {}
     else:
         st.warning("Silakan upload file CSV terlebih dahulu melalui menu Upload.")
 
@@ -264,7 +259,6 @@ def comments_preprocessed_page():
             use_container_width=True
         )
 
-        # Add custom CSS for larger font sizes - using st.markdown only once if possible or here is fine
         st.markdown("""
         <style>
         .dataframe { font-size: 18px !important; }
@@ -276,81 +270,6 @@ def comments_preprocessed_page():
     except Exception as e:
         st.error(f'Error dalam preprocessing: {str(e)}')
 
-def word2vec_page():
-    # Lazy import
-    from services.word2vec_service import get_word2vec_analysis, load_word2vec_model, get_similar_words
-    
-    st.header("🔤 Word2Vec Analysis")
-
-    if not st.session_state.uploaded_file or not os.path.exists(st.session_state.uploaded_file):
-        st.warning("Silakan upload file CSV terlebih dahulu.")
-        return
-
-    try:
-        data = get_word2vec_analysis(st.session_state.uploaded_file)
-
-        if 'error' in data:
-            st.error(data['error'])
-            return
-
-        # Model Information Section
-        st.subheader("📊 Informasi Model")
-        col1, col2, col3, col4, col5 = st.columns(5)
-        # Display metrics...
-        with col1: st.metric("Ukuran Vokabuler", f"{data['model_info']['vocab_size']}")
-        with col2: st.metric("Dimensi Vektor", f"{data['model_info']['vector_size']}")
-        with col3: st.metric("Ukuran Window", f"{data['model_info']['window_size']}")
-        with col4: st.metric("Min Count", f"{data['model_info']['min_count']}")
-        with col5: st.metric("Workers", f"{data['model_info']['workers']}")
-
-        # Most Frequent Words
-        st.subheader("🔍 Kata yang Sering Muncul")
-        if data['sample_embeddings']:
-            frequent_words_data = []
-            for i, embedding in enumerate(data['sample_embeddings'], 1):
-                embedding_str = f"[{embedding['vector'][0]:.3f}, {embedding['vector'][1]:.3f}]"
-                frequent_words_data.append({
-                    "Kata": embedding['word'],
-                    "Embedding (2D)": embedding_str,
-                    "Frekuensi": f"#{i}"
-                })
-            df_frequent = pd.DataFrame(frequent_words_data)
-            st.dataframe(df_frequent, hide_index=True, use_container_width=True)
-        else:
-            st.info("Tidak ada data kata yang tersedia.")
-
-        # Visualization
-        st.subheader("📈 Visualisasi Embedding")
-        if data['visualization']:
-            st.components.v1.html(data['visualization'], height=650)
-        
-        # Search
-        st.subheader("🔍 Cari Kata Serupa")
-        col_search, col_topn = st.columns([2, 1])
-        with col_search:
-            search_word = st.text_input("Masukkan kata:", placeholder="Ketik kata yang ingin dicari...")
-        with col_topn:
-            topn = st.selectbox("Jumlah hasil:", [5, 10, 15, 20], index=0)
-
-        if search_word:
-            try:
-                model = load_word2vec_model()
-                if model and search_word in model.wv:
-                    similar_words = get_similar_words(model, search_word, topn=topn)
-                    if similar_words:
-                        st.success(f"Ditemukan {len(similar_words)} kata serupa untuk '{search_word}':")
-                        for i, similar in enumerate(similar_words, 1):
-                            st.write(f"{i}. **{similar['word']}** - Similarity: {similar['similarity']:.3f}")
-                    else:
-                        st.warning(f"Tidak ditemukan kata serupa untuk '{search_word}'.")
-                else:
-                    st.error(f"Kata '{search_word}' tidak ditemukan dalam vokabuler model.")
-            except Exception as e:
-                st.error(f"Error dalam pencarian: {str(e)}")
-
-    except Exception as e:
-        st.error(f'Error dalam analisis Word2Vec: {str(e)}')
-
 def analysis_page():
     st.title("🧩 Analisis Topik")
     
@@ -358,158 +277,87 @@ def analysis_page():
         st.warning("Silakan upload file CSV terlebih dahulu.")
         return
 
-    tab1, tab2 = st.tabs(["BERTopic Analysis", "LDA Analysis"])
+    tab1, tab2 = st.tabs(["BERTopic + Sentence Transformer", "BERTopic + USE"])
 
     with tab1:
-        bertopic_page()
+        bertopic_page(embedding_type="indobert")
 
     with tab2:
-        lda_page()
+        bertopic_page(embedding_type="use")
 
-def bertopic_page():
+def bertopic_page(embedding_type="indobert"):
     # Lazy import
     from services.bertopic_service import build_bertopic_model, get_bertopic_analysis
     
-    st.header("Metode BERTopic (+ Word2Vec)")
+    model_name = "Sentence Transformer" if embedding_type == "indobert" else "Universal Sentence Encoder (USE)"
+    st.header(f"Metode BERTopic (+ {model_name})")
 
     try:
-        # Calculate file hash to identify unique files
+        # Calculate file hash to identify unique files (plus embedding type)
         file_hash = get_file_hash(st.session_state.uploaded_file)
+        cache_key = f"{file_hash}_{embedding_type}"
 
         # Check if model is already cached for this file
-        if file_hash in st.session_state.bertopic_cache:
-            data = st.session_state.bertopic_cache[file_hash]
-            st.success("Model BERTopic dimuat dari cache!")
+        if cache_key in st.session_state.bertopic_cache:
+            data = st.session_state.bertopic_cache[cache_key]
+            st.success(f"Model BERTopic ({model_name}) dimuat dari cache!")
         else:
-            # Try to load existing model for this specific file
-            data = get_bertopic_analysis(st.session_state.uploaded_file)
-            if 'error' not in data:
-                st.session_state.bertopic_cache[file_hash] = data
-                st.info("Model BERTopic dimuat dari file.")
-            else:
-                with st.spinner("Membangun model BERTopic... Ini mungkin memakan waktu beberapa menit."):
-                    data = build_bertopic_model(st.session_state.uploaded_file)
-                st.session_state.bertopic_cache[file_hash] = data
-                st.success("Model BERTopic berhasil dibangun!")
+            # Build specific model
+            with st.spinner(f"Membangun model BERTopic dengan {model_name}... Ini mungkin memakan waktu beberapa menit."):
+                data = build_bertopic_model(st.session_state.uploaded_file, embedding_type=embedding_type)
+            st.session_state.bertopic_cache[cache_key] = data
+            st.success(f"Model BERTopic ({model_name}) berhasil dibangun!")
 
         # Display results
         if 'error' in data:
             st.error(data['error'])
-        else:
-            col1, col2, col3 = st.columns(3)
-            with col1: st.metric("Total Topik", data.get('total_topics', 0))
-            with col2: st.metric("Skor Koherensi", f"{data.get('coherence_score', 0):.3f}")
-            with col3: st.metric("Tipe Model", "BERTopic")
+            return
 
-            if 'topics_summary' in data:
-                st.subheader("🔍 Topik Teratas")
-                top_topics = sorted(data['topics_summary'], key=lambda x: x['count'], reverse=True)[:10]
-                
-                # Prepare data for display
-                display_data = []
-                for t in top_topics:
-                    display_data.append({
-                        'topic_id': t['topic_id'],
-                        'name': t['name'],
-                        'keywords': t['keywords'],
-                        'count': t['count']
-                    })
+        # 1. Coherence Table (As requested by user: Topik | Daftar Kata | Coherence Score cv)
+        if 'topics_details' in data:
+             st.subheader("📋 Detail Topik & Coherence Score")
+             
+             # Format for display: Topik, Daftar Kata (underscored), Coherence
+             table_data = []
+             for topic in data['topics_details']:
+                 # Join words with underscores as shown in user image
+                 words_str = "_".join(topic['keywords'])
+                 table_data.append({
+                     "Topik": topic['topic_id'],
+                     "Daftar Kata": words_str,
+                     "Coherence Score cv": f"{topic['coherence']:.3f}"
+                 })
+             
+             df_table = pd.DataFrame(table_data)
+             st.dataframe(
+                 df_table,
+                 column_config={
+                    "Topik": st.column_config.NumberColumn("Topik", width="small"),
+                    "Daftar Kata": st.column_config.TextColumn("Daftar Kata", width="large"),
+                    "Coherence Score cv": st.column_config.TextColumn("Coherence Score cv", width="medium"), 
+                 },
+                 hide_index=True,
+                 use_container_width=True
+             )
 
-                st.dataframe(
-                    pd.DataFrame(display_data),
-                    column_config={
-                        "topic_id": st.column_config.NumberColumn("ID Topik", width="small"),
-                        "name": st.column_config.TextColumn("Label Topik", width="medium"),
-                        "keywords": st.column_config.ListColumn("Kata Kunci (Top Words)", width="large"),
-                        "count": st.column_config.NumberColumn("Estimasi Jumlah", width="small"),
-                    },
-                    column_order=["topic_id", "name", "keywords", "count"],
-                    hide_index=True,
-                    use_container_width=True
-                )
-
-            if 'visualizations' in data:
-                st.subheader("📈 Visualisasi")
-                if data['visualizations'].get('barchart'):
-                    st.markdown("**Barchart - Kata-Kata Utama per Topik**")
-                    st.components.v1.html(data['visualizations']['barchart'], height=400, scrolling=True)
-                if data['visualizations'].get('topics'):
-                    st.markdown("**Visualisasi Topik 2D**")
-                    st.components.v1.html(data['visualizations']['topics'], height=800)
+        # 2. Visualizations
+        if 'visualizations' in data:
+            st.subheader("📈 Visualisasi")
+            
+            # Barchart
+            if data['visualizations'].get('barchart'):
+                st.markdown("**Barchart - Kata-Kata Utama per Topik**")
+                st.components.v1.html(data['visualizations']['barchart'], height=400, scrolling=True)
+            
+            # 2D Plot
+            if data['visualizations'].get('topics'):
+                 st.markdown("**Visualisasi Topik**")
+                 st.components.v1.html(data['visualizations']['topics'], height=800)
 
     except Exception as e:
+        import traceback
         st.error(f'Error dalam analisis BERTopic: {str(e)}')
-
-def lda_page():
-    # Lazy import
-    from services.lda_service import build_lda_model, get_lda_analysis
-    
-    st.header("Metode LDA (+ Word2Vec)")
-
-    try:
-        file_hash = get_file_hash(st.session_state.uploaded_file)
-
-        if file_hash in st.session_state.lda_cache:
-            data = st.session_state.lda_cache[file_hash]
-            st.success("Model LDA dimuat dari cache!")
-        else:
-            data = get_lda_analysis(st.session_state.uploaded_file)
-            if 'error' not in data:
-                st.session_state.lda_cache[file_hash] = data
-                st.info("Model LDA dimuat dari file.")
-            else:
-                with st.spinner("Membangun model LDA..."):
-                    data = build_lda_model(st.session_state.uploaded_file)
-                st.session_state.lda_cache[file_hash] = data
-                st.success("Model LDA berhasil dibangun!")
-
-        if 'error' in data:
-            st.error(data['error'])
-        else:
-            col1, col2, col3 = st.columns(3)
-            with col1: st.metric("Total Topik", data.get('total_topics', 0))
-            with col2: st.metric("Skor Koherensi", f"{data.get('coherence_score', 0):.3f}")
-            with col3: st.metric("Tipe Model", "LDA")
-
-            if 'topics_summary' in data:
-                st.subheader("🔍 Topik Teratas")
-                top_topics = sorted(data['topics_summary'], key=lambda x: x['count'], reverse=True)
-                
-                # Filter columns to display and avoid numpy types issues
-                display_data = []
-                for t in top_topics:
-                    display_data.append({
-                        'topic_id': t['topic_id'],
-                        'name': t['name'],
-                        'keywords': t['keywords'],
-                        'count': t['count']
-                    })
-                
-                st.dataframe(
-                    pd.DataFrame(display_data), 
-                    column_config={
-                        "topic_id": st.column_config.NumberColumn("ID Topik", width="small"),
-                        "name": st.column_config.TextColumn("Label Topik", width="medium"),
-                        "keywords": st.column_config.ListColumn("Kata Kunci (Top Words)", width="large"),
-                        "count": st.column_config.NumberColumn("Estimasi Jumlah", width="small"),
-                    },
-                    column_order=["topic_id", "name", "keywords", "count"],
-                    hide_index=True, 
-                    use_container_width=True
-                )
-
-            if 'visualizations' in data:
-                st.subheader("📈 Visualisasi (Barchart)")
-                if data['visualizations'].get('barchart'):
-                    st.markdown("**Barchart - Kata-Kata Utama per Topik**")
-                    st.components.v1.html(data['visualizations']['barchart'], height=800, scrolling=True)
-                
-                if data['visualizations'].get('intertopic_map'):
-                    st.markdown("**Visualisasi Intertopic Distance Map**")
-                    st.components.v1.html(data['visualizations']['intertopic_map'], height=800, scrolling=True)
-
-    except Exception as e:
-        st.error(f'Error dalam analisis LDA: {str(e)}')
+        st.code(traceback.format_exc())
 
 if __name__ == "__main__":
     main()

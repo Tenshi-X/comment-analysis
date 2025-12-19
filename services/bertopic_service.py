@@ -10,8 +10,62 @@ import plotly.express as px
 import joblib
 from umap import UMAP
 from hdbscan import HDBSCAN
-from sentence_transformers import SentenceTransformer
+from sentence_transformers import SentenceTransformer, models
 import hashlib
+from gensim.models.coherencemodel import CoherenceModel
+from gensim.corpora import Dictionary
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Try importing tensorflow dependencies for USE
+try:
+    import tensorflow as tf
+    import tensorflow_hub as hub
+    import tensorflow_text  # Required for some TF Hub models
+    TF_AVAILABLE = True
+except ImportError:
+    TF_AVAILABLE = False
+    logger.warning("TensorFlow/TF Hub/TF Text not installed. Universal Sentence Encoder (Original) may fail.")
+
+# --- Custom wrapper for USE as per reference file ---
+class UniversalSentenceEncoderModel(SentenceTransformer):
+    def __init__(self, tfhub_module_callable, model_name="UniversalSentenceEncoder"):
+        # Initialize base SentenceTransformer without model_name_or_path first
+        # We manually handle the encoder
+        super().__init__('sentence-transformers/all-MiniLM-L6-v2') # Dummy initialization to get base structure
+        # But we override the encode logic
+        self.tfhub_module = tfhub_module_callable
+        self.model_name = model_name
+        
+        # Create a Keras model that uses the tfhub_module_callable wrapped in Lambda.
+        if TF_AVAILABLE:
+            try:
+                text_input = tf.keras.layers.Input(shape=(), dtype=tf.string)
+                embeddings_output = tf.keras.layers.Lambda(lambda x: self.tfhub_module(x), name=self.model_name)(text_input)
+                self.keras_encoder = tf.keras.Model(inputs=text_input, outputs=embeddings_output)
+            except Exception as e:
+                logger.error(f"Failed to create Keras model for USE: {e}")
+        
+        # Override module definition to avoid saving errors or confusion
+        self._modules = {} 
+
+    def encode(self, sentences, batch_size=32, show_progress_bar=False, convert_to_numpy=True):
+        if not TF_AVAILABLE:
+            raise ImportError("TensorFlow is not available. Cannot use Universal Sentence Encoder (TF Hub).")
+
+        if isinstance(sentences, str):
+            sentences = [sentences]
+            
+        # Use the internal Keras model to get embeddings
+        # predict returns numpy array by default in explicit calls usually, but let's be safe
+        embeddings = self.keras_encoder.predict(sentences, batch_size=batch_size, verbose=0)
+        
+        if convert_to_numpy:
+            return embeddings
+        return tf.convert_to_tensor(embeddings)
 
 def load_bertopic_model(filepath=None, model_path=None):
     """Load topic model for specific CSV file"""
@@ -27,7 +81,7 @@ def load_bertopic_model(filepath=None, model_path=None):
             pass
     return None
 
-def build_bertopic_model(filepath=None):
+def build_bertopic_model(filepath=None, embedding_type="indobert"):
     """Build topic model using BERTopic from uploaded CSV data"""
     if filepath is None:
         return {
@@ -39,6 +93,8 @@ def build_bertopic_model(filepath=None):
         df = pd.read_csv(filepath, encoding='utf-8-sig')
         from services.preprocessing import get_preprocessing_steps
         preprocessing_results = get_preprocessing_steps(df)
+        
+        # Original text and clean text
         text_data = [item['text_clean'] for item in preprocessing_results['hasil_preprocessing'] if item['text_clean']]
 
         if not text_data:
@@ -46,59 +102,63 @@ def build_bertopic_model(filepath=None):
                 'error': 'Tidak ada data teks yang valid setelah preprocessing.'
             }
 
-        # Limit data for performance (take first 500 samples to prevent crash)
-        max_samples = 500
-        if len(text_data) > max_samples:
-            text_data = text_data[:max_samples]
+        # Setup Indonesian stopwords safe load
+        try:
+            indonesian_stopwords = stopwords.words('indonesian')
+        except:
+            indonesian_stopwords = []
 
-        # Setup Indonesian stopwords
-        indonesian_stopwords = stopwords.words('indonesian')
-
-        # Create BERTopic model with optimized settings for high coherence score
-        # Use better embedding model for improved semantic understanding
-        embedding_model = SentenceTransformer("paraphrase-multilingual-mpnet-base-v2")
-
-        # Optimized UMAP for better topic separation and coherence
-        umap_model = UMAP(
-            n_neighbors=15,  # Increased for better local structure preservation
-            n_components=5,
-            min_dist=0.1,  # Slightly increased for better separation
-            metric='cosine',
-            random_state=42,
-            low_memory=False  # Allow more memory for better quality
-        )
-
-        # HDBSCAN with parameters optimized for coherence
-        hdbscan_model = HDBSCAN(
-            min_cluster_size=8,  # Increased for more coherent topics
-            min_samples=3,  # Added for better cluster stability
-            metric='euclidean',
-            cluster_selection_method='eom',
-            prediction_data=True,
-            cluster_selection_epsilon=0.1  # Added for finer cluster selection
-        )
-
-        # Vectorizer with optimized parameters for coherence
+        # Vectorizer
         vectorizer_model = CountVectorizer(
             stop_words=indonesian_stopwords,
             ngram_range=(1, 2),
-            min_df=2,  # Reduced to capture more terms
-            max_df=0.95  # Added to remove very common terms
+            min_df=5 
         )
+        
+        # Tokenized data for Coherence Calculation (Use analyzer to match topic n-grams)
+        analyzer = vectorizer_model.build_analyzer()
+        tokenized_data = [analyzer(text) for text in text_data]
 
-        # Create BERTopic model with settings optimized for high coherence
+        # Select Embedding Model
+        if embedding_type == "indobert":
+            # --- Method 1: IndoBERT from Reference (Explicit Construction) ---
+            print("Loading IndoBERT model (Explicit Construction)...")
+            try:
+                # 1. Load the pre-trained IndoBERT model from Hugging Face's transformers
+                word_embedding_model = models.Transformer('indolem/indobert-base-uncased')
+                # 2. Add a pooling layer
+                pooling_model = models.Pooling(word_embedding_model.get_word_embedding_dimension(), pooling_mode='mean')
+                # 3. Combine
+                embedding_model = SentenceTransformer(modules=[word_embedding_model, pooling_model])
+            except Exception as e:
+                print(f"Failed to load indolem/indobert-base-uncased: {e}. Fallback to firqaaa/indo-sentence-bert-base.")
+                embedding_model = SentenceTransformer("firqaaa/indo-sentence-bert-base")
+                
+        else:
+            # --- Method 2: USE from Reference (TF Hub Wrapper) ---
+            print("Loading Universal Sentence Encoder (TF Hub)...")
+            if TF_AVAILABLE:
+                try:
+                    use_model_url = "https://tfhub.dev/google/universal-sentence-encoder-multilingual/3"
+                    tfhub_module_callable = hub.load(use_model_url)
+                    embedding_model = UniversalSentenceEncoderModel(tfhub_module_callable)
+                except Exception as e:
+                    print(f"Failed to load USE from TF Hub: {e}. Fallback to distiluse.")
+                    embedding_model = SentenceTransformer('sentence-transformers/distiluse-base-multilingual-cased-v1')
+            else:
+                 print("TensorFlow not available. Fallback to distiluse.")
+                 embedding_model = SentenceTransformer('sentence-transformers/distiluse-base-multilingual-cased-v1')
+
+        # Create BERTopic model
+        # Reference: min_topic_size=30, but reduced to 10 to allow more topics for smaller datasets
         topic_model = BERTopic(
             embedding_model=embedding_model,
-            umap_model=umap_model,
-            hdbscan_model=hdbscan_model,
             vectorizer_model=vectorizer_model,
             representation_model=KeyBERTInspired(),
-            ctfidf_model=ClassTfidfTransformer(reduce_frequent_words=True),  # Added to reduce impact of frequent words
-            nr_topics=None,  # Let BERTopic determine optimal number
-            min_topic_size=5,  # Increased for more coherent topics
-            verbose=True,
+            ctfidf_model=ClassTfidfTransformer(reduce_frequent_words=True),
             calculate_probabilities=True,
-            top_n_words=10  # Increased for better topic representation
+            verbose=True,
+            min_topic_size=10 
         )
 
         # Fit the model
@@ -106,123 +166,91 @@ def build_bertopic_model(filepath=None):
 
         # Get topic information
         topic_info = topic_model.get_topic_info()
+        valid_topics = topic_info[topic_info['Topic'] != -1]
 
-        # Filter out outlier topic (-1)
-        topic_info = topic_info[topic_info['Topic'] != -1]
-
-        # Create topics summary
-        topics_summary = []
-        for _, row in topic_info.iterrows():
-            topic_id = row['Topic']
-            count = row['Count']
-            name = row['Name']
-
-            # Get top words for this topic
-            topic_words = topic_model.get_topic(topic_id)
-            if topic_words:
-                keywords = [word for word, _ in topic_words[:5]]  # Top 5 words
+        # --- Coherence Calculation (C_V) per Topic ---
+        
+        # 1. Get Topics list (list of list of words)
+        topics_list = []
+        topic_ids = valid_topics['Topic'].tolist()
+        
+        for tid in topic_ids:
+            # Get only words (no scores)
+            words_data = topic_model.get_topic(tid)
+            if words_data:
+                words = [word for word, _ in words_data]
+                topics_list.append(words)
             else:
-                keywords = []
+                topics_list.append([])
 
-            # Calculate probability safely
-            topic_probs = probs[topics == topic_id]
-            probability = topic_probs.mean() if len(topic_probs) > 0 else 0.0
+        # 2. Gensim Dictionary
+        dictionary = Dictionary(tokenized_data)
+        
+        # Filter topic words
+        filtered_topics_list = []
+        for topic in topics_list:
+            filtered_topic = [word for word in topic if word in dictionary.token2id]
+            filtered_topics_list.append(filtered_topic)
+        
+        # 3. Calculate Coherence
+        coherence_per_topic = []
+        
+        # Prepare valid topics for Gensim (Gensim fails if a topic is empty list)
+        valid_topics_indices = [i for i, t in enumerate(filtered_topics_list) if len(t) > 0]
+        valid_topics_payload = [filtered_topics_list[i] for i in valid_topics_indices]
 
-            topics_summary.append({
-                'topic_id': topic_id,
+        if valid_topics_payload:
+            try:
+                cm = CoherenceModel(topics=valid_topics_payload, texts=tokenized_data, dictionary=dictionary, coherence='c_v')
+                coherence_scores_raw = cm.get_coherence_per_topic()
+                
+                # Map back to original indices
+                score_map = {original_idx: score for original_idx, score in zip(valid_topics_indices, coherence_scores_raw)}
+                
+                # Fill full list
+                for i in range(len(topic_ids)):
+                    coherence_per_topic.append(score_map.get(i, 0.0))
+                    
+            except Exception as e:
+                logger.error(f"Coherence calculation failed: {e}")
+                coherence_per_topic = [0.0] * len(topic_ids)
+        else:
+             coherence_per_topic = [0.0] * len(topic_ids)
+
+        # Prepare detailed results for Table
+        topics_details = []
+        for idx, tid in enumerate(topic_ids):
+            keywords = topics_list[idx] if idx < len(topics_list) else []
+            score = coherence_per_topic[idx] if idx < len(coherence_per_topic) else 0.0
+            
+            topics_details.append({
+                'topic_id': tid,
+                'name': topic_model.get_topic_info(tid)['Name'].values[0],
                 'keywords': keywords,
-                'count': count,
-                'probability': probability,
-                'name': name
+                'coherence': score
             })
 
-        # Calculate coherence score using stable method
-        try:
-            # Try BERTopic's built-in coherence score first (if available)
-            coherence_score = topic_model.get_coherence_score()
-        except (AttributeError, ImportError, Exception):
-            # Fallback: Calculate coherence using a simple but effective approximation
-            try:
-                topic_info_filtered = topic_info[topic_info['Topic'] != -1]
-
-                if len(topic_info_filtered) > 0 and len(text_data) > 0:
-                    # Calculate coherence based on topic quality metrics
-                    avg_topic_size = topic_info_filtered['Count'].mean()
-                    num_topics = len(topic_info_filtered)
-                    data_size = len(text_data)
-
-                    # Coherence approximation: balance between topic size and number of topics
-                    size_factor = min(1.0, avg_topic_size / (data_size * 0.1))  # Prefer topics with decent size
-                    diversity_factor = min(1.0, num_topics / 10.0)  # Prefer reasonable number of topics
-
-                    # Combine factors with weights
-                    coherence_score = (size_factor * 0.6) + (diversity_factor * 0.4)
-
-                    # Ensure reasonable range and boost for good configurations
-                    coherence_score = max(0.3, min(0.85, coherence_score))
-
-                    # Bonus for well-formed topics (topics that are neither too small nor too large)
-                    optimal_topic_ratio = 0.05  # 5% of data per topic is often optimal
-                    topic_ratio_score = 1.0 - abs((avg_topic_size / data_size) - optimal_topic_ratio) / optimal_topic_ratio
-                    coherence_score = coherence_score * (0.8 + 0.2 * max(0, topic_ratio_score))
-
-                else:
-                    coherence_score = 0.0
-
-            except Exception:
-                # Ultimate fallback
-                coherence_score = 0.5  # Default reasonable score
-
-        # Save model with unique name based on file hash
-        file_hash = hashlib.md5(filepath.encode()).hexdigest()[:8]
-        model_path = f'models/bertopic_model_{file_hash}.pkl'
-        model_data = {
-            'topic_model': topic_model,
-            'topics_summary': topics_summary,
-            'coherence_score': coherence_score,
-            'total_topics': len(topics_summary),
-            'topics': topics,
-            'probs': probs
-        }
-        joblib.dump(model_data, model_path)
+        topics_details = sorted(topics_details, key=lambda x: x['coherence'], reverse=True)
 
         # Generate Visualizations
         visualizations = generate_bertopic_visualizations(topic_model)
 
         return {
-            'topics_summary': topics_summary,
-            'coherence_score': coherence_score,
-            'total_topics': len(topics_summary),
-            'model_type': 'BERTopic (Real Implementation)',
+            'topics_details': topics_details,
+            'total_topics': len(topics_details),
+            'model_type': f'BERTopic ({ "Sentence Transformer" if embedding_type == "indobert" else embedding_type})',
             'visualizations': visualizations
         }
 
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         return {
             'error': f'Gagal membangun model BERTopic: {str(e)}'
         }
 
 def get_bertopic_analysis(filepath=None):
-    """Get topic analysis data from saved BERTopic model for specific CSV file"""
-    model_data = load_bertopic_model(filepath=filepath)
-    if model_data is None:
-        return {
-            'error': 'Model topik tidak ditemukan. Pastikan model sudah dibangun untuk file CSV ini.'
-        }
-
-    topic_model = model_data['topic_model']
-    topics_summary = model_data['topics_summary']
-
-    # Generate Visualizations
-    visualizations = generate_bertopic_visualizations(topic_model)
-
-    return {
-        'topics_summary': topics_summary,
-        'coherence_score': model_data.get('coherence_score', 0.0),
-        'total_topics': model_data.get('total_topics', 0),
-        'model_type': 'BERTopic (Real Implementation)',
-        'visualizations': visualizations
-    }
+    pass
 
 def generate_bertopic_visualizations(topic_model):
     """Generate visualizations for BERTopic model"""
@@ -233,13 +261,13 @@ def generate_bertopic_visualizations(topic_model):
     visualizations = {}
 
     try:
-        # 1. Custom Barchart (Matching LDA style but colorful)
-        # Get top topics
+        # 1. Custom Barchart (Colorful)
         topic_info = topic_model.get_topic_info()
         topic_info = topic_info[topic_info['Topic'] != -1]
+        
+        # Take top 8 by count for barchart
         top_topics = topic_info.sort_values('Count', ascending=False).head(8)
         
-        # Colors for bars
         colors = px.colors.qualitative.Plotly + px.colors.qualitative.Bold
         
         rows = (len(top_topics) + 1) // 2
@@ -248,7 +276,7 @@ def generate_bertopic_visualizations(topic_model):
         fig_barchart = make_subplots(
             rows=rows, 
             cols=cols, 
-            subplot_titles=[f"Topic {row['Topic']}: {row['Name'].split('_', 1)[1] if '_' in row['Name'] else row['Name']}" for _, row in top_topics.iterrows()],
+            subplot_titles=[f"Topic {row['Topic']}" for _, row in top_topics.iterrows()],
             vertical_spacing=0.15,
             horizontal_spacing=0.1
         )
@@ -264,8 +292,6 @@ def generate_bertopic_visualizations(topic_model):
             
             row_idx = (idx // 2) + 1
             col_idx = (idx % 2) + 1
-            
-            # Use specific color for each topic
             color = colors[idx % len(colors)]
             
             fig_barchart.add_trace(
@@ -283,14 +309,17 @@ def generate_bertopic_visualizations(topic_model):
             
         fig_barchart.update_layout(
             height=350 * rows, 
-            title_text="Top Words per Topic (Score)",
+            title_text="Top Words per Topic",
             showlegend=False
         )
         visualizations['barchart'] = fig_barchart.to_html(full_html=False)
 
         # 2. Topics visualization (2D scatter plot)
-        fig_topics = topic_model.visualize_topics(height=800)
-        visualizations['topics'] = fig_topics.to_html(full_html=False) if fig_topics else "<p>Visualisasi topik 2D tidak tersedia</p>"
+        try:
+             fig_topics = topic_model.visualize_topics()
+             visualizations['topics'] = fig_topics.to_html(full_html=False)
+        except:
+             visualizations['topics'] = "<p>Visualisasi 2D tidak tersedia (mungkin kurang topik)</p>"
 
     except Exception as viz_error:
         visualizations['barchart'] = f"<p>Visualisasi gagal dimuat: {str(viz_error)}</p>"

@@ -84,8 +84,8 @@ def get_preprocessing_steps(df):
         text = text.lower()
         # Hapus tanda baca
         text = text.translate(str.maketrans('', '', string.punctuation))
-        # Hapus karakter khusus
-        text = re.sub(r'[^a-z0-9\s]', '', text)
+        # Hapus karakter khusus (sesuai referensi: pertahankan #@/:%.-)
+        text = re.sub(r'[^\w\s#@/:%\.\-]', '', text)
         # Tokenisasi sederhana
         tokens = text.split()
         # Hapus stopwords
