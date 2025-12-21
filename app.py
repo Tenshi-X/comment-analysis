@@ -286,14 +286,19 @@ def analysis_page():
         bertopic_page(embedding_type="use")
 
 def bertopic_page(embedding_type="indobert"):
-    # Lazy import
-    from services.bertopic_service import build_bertopic_model, get_bertopic_analysis
+    # Determine model name and import appropriate builder
+    if embedding_type == "indobert":
+        from services.bertopic_indobert_service import build_bertopic_indobert as build_model
+        model_name = "Sentence Transformer (IndoBERT)"
+    else:
+        from services.bertopic_use_service import build_bertopic_use as build_model
+        model_name = "Universal Sentence Encoder (USE)"
     
-    model_name = "Sentence Transformer" if embedding_type == "indobert" else "Universal Sentence Encoder (USE)"
     st.header(f"Metode BERTopic (+ {model_name})")
 
     try:
         # Calculate file hash to identify unique files (plus embedding type)
+        # get_file_hash is defined at module level in app.py
         file_hash = get_file_hash(st.session_state.uploaded_file)
         cache_key = f"{file_hash}_{embedding_type}"
 
@@ -304,7 +309,7 @@ def bertopic_page(embedding_type="indobert"):
         else:
             # Build specific model
             with st.spinner(f"Membangun model BERTopic dengan {model_name}... Ini mungkin memakan waktu beberapa menit."):
-                data = build_bertopic_model(st.session_state.uploaded_file, embedding_type=embedding_type)
+                data = build_model(st.session_state.uploaded_file)
             st.session_state.bertopic_cache[cache_key] = data
             st.success(f"Model BERTopic ({model_name}) berhasil dibangun!")
 
