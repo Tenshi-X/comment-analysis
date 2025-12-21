@@ -239,12 +239,10 @@ def comments_preprocessed_page():
 
         # Create comparison table
         comparison_data = []
-        for original, processed in zip(original_comments, preprocessed_comments):
-            # Clean the processed comment to remove unwanted text and symbols
-            cleaned_processed = str(processed).strip('{}').replace('"text":', '').strip('"').strip()
+        for processed in preprocessed_comments:
             comparison_data.append({
-                "Komentar Asli": original,
-                "Komentar Setelah Preprocessing": cleaned_processed
+                "Komentar Asli": processed.get('text', ''),
+                "Komentar Setelah Preprocessing": processed.get('text_clean', '')
             })
 
         # Display as dataframe with custom styling

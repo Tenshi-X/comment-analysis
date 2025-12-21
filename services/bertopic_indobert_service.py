@@ -70,17 +70,17 @@ def build_bertopic_indobert(filepath=None):
         analyzer = vectorizer_model.build_analyzer()
         tokenized_data = [analyzer(text) for text in text_data]
 
-        # --- Method 1: IndoBERT from Reference (Explicit Construction) ---
-        print("Loading IndoBERT model (Explicit Construction)...")
+        # --- Method 1: IndoBERT Lite (Sentene Transformer) ---
+        print("Loading IndoBERT Lite model (Lighter version)...")
         try:
-            # 1. Load the pre-trained IndoBERT model from Hugging Face's transformers
-            word_embedding_model = models.Transformer('indolem/indobert-base-uncased')
-            # 2. Add a pooling layer
+            # Menggunakan IndoBERT Lite (ALBERT based) yang lebih ringan ("min L2"/Lite) tapi tetap IndoBERT
+            word_embedding_model = models.Transformer('indolem/indobert-lite-base-uncased')
+            # Add pooling layer
             pooling_model = models.Pooling(word_embedding_model.get_word_embedding_dimension(), pooling_mode='mean')
-            # 3. Combine
+            # Combine to create SentenceTransformer
             embedding_model = SentenceTransformer(modules=[word_embedding_model, pooling_model])
         except Exception as e:
-            print(f"Failed to load indolem/indobert-base-uncased: {e}. Fallback to firqaaa/indo-sentence-bert-base.")
+            print(f"Failed to load indolem/indobert-lite-base-uncased: {e}. Fallback to firqaaa/indo-sentence-bert-base.")
             embedding_model = SentenceTransformer("firqaaa/indo-sentence-bert-base")
 
         # Dynamic topic size: aggressive for small data
